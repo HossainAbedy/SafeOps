@@ -1,4 +1,4 @@
-# backend/services/checks.py
+# backend/checks.py
 """
 Core detection routines (pure functions) for SafeOps.
 Designed to return JSON-serializable dicts:

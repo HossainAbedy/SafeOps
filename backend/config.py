@@ -1,4 +1,4 @@
-# config.py - SafeOps configuration & constants
+# backend/config.py
 import os
 from pathlib import Path
 

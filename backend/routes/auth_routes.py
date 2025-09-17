@@ -1,3 +1,4 @@
+# backend/routes/auth_routes.py
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token
 from utils.logger import logger

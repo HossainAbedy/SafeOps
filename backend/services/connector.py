@@ -1,3 +1,4 @@
+# backend/services/connector.py
 """
 Connector abstraction. For now we delegate to checks.run_remote_scan if available (WinRM path).
 Later you can add agent communication and PSExec fallbacks here.
