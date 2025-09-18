@@ -9,7 +9,6 @@ import os
 import psutil
 import subprocess
 import json
-import time
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -19,7 +18,7 @@ from utils import (
 )
 from config import CRITICAL_FILES, BASELINE_FILE, MAX_ISASS_RESULTS
 
-# Try import pywin32 for Windows-specific checks
+# Windows-specific imports
 try:
     import win32security
     import win32api
@@ -51,8 +50,7 @@ logger = logging.getLogger(__name__)
 # -------------------------
 # Privileges
 # -------------------------
-def enable_security_privilege():
-    """Enable SeSecurityPrivilege for reading Security log (requires Admin)."""
+def enable_security_privilege() -> bool:
     if not is_windows() or not win32security:
         return False
     try:
@@ -106,7 +104,6 @@ def check_processes() -> Dict[str, Any]:
                     suspicious.append({"type": "isass_process", "detail": entry})
                 if name == "lsass.exe" and exe and not exe_l.startswith(r"c:\windows\system32"):
                     suspicious.append({"type": "lsass_path", "detail": entry})
-
                 if "certutil -urlcache" in cmd.lower() or "bitsadmin" in cmd.lower() or "downloadfile" in cmd.lower():
                     suspicious.append({"type": "file_download_lolbin", "detail": entry})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -171,7 +168,7 @@ def compare_to_baseline() -> Dict[str, Any]:
     return json_ok({"baseline_file": BASELINE_FILE, "differences": diffs})
 
 # -------------------------
-# Other checks (registry, startup, services, etc.)
+# Registry / startup / services
 # -------------------------
 def check_registry_run_keys() -> Dict[str, Any]:
     if not is_windows() or not winreg:
@@ -231,12 +228,53 @@ def check_autostart_services() -> Dict[str, Any]:
         return json_err(str(e))
 
 # -------------------------
-# Performance / network / misconfig
+# Windows Event Logs
+# -------------------------
+def read_event_logs(max_records: int = 50) -> Dict[str, Any]:
+    if not is_windows() or not win32evtlog:
+        return json_err("not windows or win32evtlog not available")
+    logs = []
+    try:
+        server = "localhost"
+        log_types = ["System", "Security", "Application"]
+        for log_type in log_types:
+            hand = win32evtlog.OpenEventLog(server, log_type)
+            total = win32evtlog.GetNumberOfEventLogRecords(hand)
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            events = win32evtlog.ReadEventLog(hand, flags, 0)
+            count = 0
+            for e in events:
+                logs.append({"log_type": log_type, "event_id": e.EventID, "source": e.SourceName, "time": str(e.TimeGenerated), "category": e.EventCategory})
+                count += 1
+                if count >= max_records:
+                    break
+        return json_ok(logs)
+    except Exception as e:
+        logger.exception("read_event_logs failed")
+        return json_err(str(e))
+
+# -------------------------
+# Scan for ISASS
+# -------------------------
+def scan_for_isass(limit: int = 50) -> Dict[str, Any]:
+    suspicious = []
+    try:
+        for p in psutil.process_iter(["pid", "name"]):
+            if p.info.get("name", "").lower() == "isass.exe":
+                suspicious.append({"pid": p.info["pid"], "name": p.info["name"]})
+                if len(suspicious) >= limit:
+                    break
+        return json_ok(suspicious)
+    except Exception as e:
+        logger.exception("scan_for_isass failed")
+        return json_err(str(e))
+
+# -------------------------
+# Performance / network
 # -------------------------
 def check_performance(short_interval: int = 1) -> Dict[str, Any]:
     try:
-        perf = {}
-        perf["cpu_percent"] = psutil.cpu_percent(interval=short_interval)
+        perf = {"cpu_percent": psutil.cpu_percent(interval=short_interval)}
         mem = psutil.virtual_memory()
         perf["memory"] = {"total": mem.total, "available": mem.available, "percent": mem.percent}
         perf["disk_usage"] = {"c": psutil.disk_usage("C:\\")._asdict()} if os.path.exists("C:\\") else {}
@@ -272,7 +310,6 @@ def run_checks_compact(target: str = "local") -> Dict[str, Any]:
         return json_err(f"run_checks_compact failed: {e}")
 
 def run_all_extended(include_isass_scan: bool = False) -> Dict[str, Any]:
-    """Heavy extended scan"""
     try:
         out = {
             "ts": now_iso(),
@@ -287,11 +324,16 @@ def run_all_extended(include_isass_scan: bool = False) -> Dict[str, Any]:
             "performance": check_performance().get("data"),
             "network": check_network_connections().get("data"),
         }
+        if include_isass_scan:
+            out["isass_scan"] = scan_for_isass().get("data")
         return json_ok(out)
     except Exception as e:
         logger.exception("run_all_extended failed")
         return json_err(str(e))
 
+# -------------------------
+# Remote scan wrapper
+# -------------------------
 def run_remote_scan(host: str, username: str, password: str, transport: str = "ntlm") -> Dict[str, Any]:
     if _remote_run_remote_scan is None:
         return json_err("remote scan not available")
