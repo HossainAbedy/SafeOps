@@ -74,3 +74,19 @@ def scan_for_isass(limit: int = 50) -> Dict[str, Any]:
     except Exception as e:
         logger.exception("scan_for_isass failed")
         return {"ok": False, "error": str(e)}
+
+try:
+    from .connector import run_remote_scan as _run_remote_scan
+    REMOTE_AVAILABLE = True
+except ImportError:
+    _run_remote_scan = None
+    REMOTE_AVAILABLE = False
+
+def run_remote_scan(host: str, username: str, password: str, transport: str = "ntlm") -> Dict[str, Any]:
+    if not REMOTE_AVAILABLE:
+        return {"ok": False, "error": "remote scan not available"}
+    try:
+        return _run_remote_scan(host, username, password, transport)
+    except Exception as e:
+        logger.exception("scanner.run_remote_scan failed")
+        return {"ok": False, "error": str(e)}

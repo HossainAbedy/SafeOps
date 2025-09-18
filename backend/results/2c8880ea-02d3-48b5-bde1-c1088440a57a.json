@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "data": {
+    "ts": "2025-09-18T05:14:54.714422Z",
+    "system_info": {
+      "hostname": "ABEDY",
+      "os": "Windows",
+      "os_version": "10.0.26100",
+      "platform": "Windows-11-10.0.26100-SP0",
+      "python_version": "3.13.5",
+      "target": "local"
+    }
+  }
+}
